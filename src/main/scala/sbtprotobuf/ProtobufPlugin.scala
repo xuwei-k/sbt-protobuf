@@ -7,7 +7,7 @@ import java.io.File
 
 
 object ProtobufPlugin extends Plugin {
-  val protobufConfig = config("protobuf")
+  val protobufTask = TaskKey[Seq[File]]("protobuf-task", "Compile protobuf sources")
 
   val includePaths = TaskKey[Seq[File]]("protobuf-include-paths", "The paths that contain *.proto dependencies.")
   val protoc = SettingKey[String]("protobuf-protoc", "The path+name of the protoc executable.")
@@ -18,21 +18,21 @@ object ProtobufPlugin extends Plugin {
   val unpackDependencies = TaskKey[UnpackedDependencies]("protobuf-unpack-dependencies", "Unpack dependencies.")
   val protocOptions = SettingKey[Seq[String]]("protobuf-protoc-options", "Additional options to be passed to protoc")
 
-  lazy val protobufSettings: Seq[Setting[_]] = inConfig(protobufConfig)(Seq[Setting[_]](
-    sourceDirectory <<= (sourceDirectory in Compile) { _ / "protobuf" },
-    sourceDirectories <<= sourceDirectory apply (_ :: Nil),
+ def protobufSettingsIn(conf: Configuration): Seq[Setting[_]] = inConfig(conf)(inTask(protobufTask)(Seq[Setting[_]](
+    sourceDirectory <<= (sourceDirectory in conf) { _ / "protobuf" },
+    sourceDirectories <<= (sourceDirectory in protobufTask) apply (_ :: Nil),
     includeFilter := "*.proto",
-    javaSource <<= (sourceManaged in Compile) { _ / "compiled_protobuf" },
+    javaSource <<= (sourceManaged in conf) { _ / "compiled_protobuf" },
     externalIncludePath <<= target(_ / "protobuf_external"),
     protoc := "protoc",
     runProtoc <<= (protoc, streams) map ((cmd, s) => args => Process(cmd, args) ! s.log),
     version := "2.6.1",
 
     generatedTargets := Nil,
-    generatedTargets <+= (javaSource in protobufConfig)((_, "*.java")), // add javaSource to the list of patterns
+    generatedTargets <+= (javaSource in protobufTask)((_, "*.java")), // add javaSource to the list of patterns
 
     protocOptions := Nil,
-    protocOptions <++= (generatedTargets in protobufConfig){ generatedTargets => // if a java target is provided, add java generation option
+    protocOptions <++= (generatedTargets in protobufTask){ generatedTargets => // if a java target is provided, add java generation option
       generatedTargets.find(_._2.endsWith(".java")) match {
         case Some(targetForJava) => Seq("--java_out=%s".format(targetForJava._1.getCanonicalPath))
         case None => Nil
@@ -40,25 +40,25 @@ object ProtobufPlugin extends Plugin {
     },
 
     managedClasspath <<= (classpathTypes, update) map { (ct, report) =>
-      Classpaths.managedJars(protobufConfig, ct, report)
+      Classpaths.managedJars(conf, ct, report)
     },
 
     unpackDependencies <<= unpackDependenciesTask,
 
-    includePaths <<= (sourceDirectory in protobufConfig) map (identity(_) :: Nil),
+    includePaths <<= (sourceDirectory in protobufTask) map (identity(_) :: Nil),
     includePaths <+= externalIncludePath map (identity(_)),
 
-    generate <<= sourceGeneratorTask.dependsOn(unpackDependencies)
+    generate <<= sourceGeneratorTask.dependsOn(unpackDependencies in protobufTask),
+    protobufTask <<= generate
 
   )) ++ Seq[Setting[_]](
-    watchSources ++= ((sourceDirectory in protobufConfig).value ** "*.proto").get,
-    sourceGenerators in Compile <+= generate in protobufConfig,
-    cleanFiles <++= (generatedTargets in protobufConfig){_.map{_._1}},
-    cleanFiles <+= (externalIncludePath in protobufConfig),
-    managedSourceDirectories in Compile <++= (generatedTargets in protobufConfig){_.map{_._1}},
-    libraryDependencies <+= (version in protobufConfig)("com.google.protobuf" % "protobuf-java" % _),
-    ivyConfigurations += protobufConfig
-  )
+    watchSources ++= ((sourceDirectory in (conf, protobufTask)).value ** "*.proto").get,
+    sourceGenerators <+= generate in (conf, protobufTask),
+    cleanFiles <++= (generatedTargets in (conf, protobufTask)){_.map{_._1}},
+    cleanFiles <+= (externalIncludePath in (conf, protobufTask)),
+    managedSourceDirectories <++= (generatedTargets in (conf, protobufTask)){_.map{_._1}},
+    libraryDependencies <+= (version in protobufTask)("com.google.protobuf" % "protobuf-java" % _)
+  ))
 
   case class UnpackedDependencies(dir: File, files: Seq[File])
 
@@ -69,6 +69,10 @@ object ProtobufPlugin extends Plugin {
     } catch { case e: Exception =>
       throw new RuntimeException("error occured while compiling protobuf files: %s" format(e.getMessage), e)
     }
+
+  lazy val protobufSettings: Seq[Setting[_]] =
+    protobufSettingsIn(Compile) ++
+    protobufSettingsIn(Test)
 
   private[this] def compile(protocCommand: Seq[String] => Int, schemas: Set[File], includePaths: Seq[File], protocOptions: Seq[String], generatedTargets: Seq[(File, String)], log: Logger) = {
     val generatedTargetDirs = generatedTargets.map(_._1)
@@ -108,7 +112,7 @@ object ProtobufPlugin extends Plugin {
   }
 
   private[this] def sourceGeneratorTask =
-    (streams, sourceDirectories in protobufConfig, includePaths in protobufConfig, includeFilter in protobufConfig, excludeFilter in protobufConfig, protocOptions in protobufConfig, generatedTargets in protobufConfig, streams, runProtoc) map {
+    (streams, sourceDirectories in protobufTask, includePaths in protobufTask, includeFilter in protobufTask, excludeFilter in protobufTask, protocOptions in protobufTask, generatedTargets in protobufTask, streams, runProtoc) map {
     (out, srcDirs, includePaths, includeFilter, excludeFilter, protocOpts, otherTargets, streams, protocCommand) =>
       val schemas = srcDirs.toSet[File].flatMap(srcDir => (srcDir ** (includeFilter -- excludeFilter)).get.map(_.getAbsoluteFile))
       val cachedCompile = FileFunction.cached(streams.cacheDirectory / "protobuf", inStyle = FilesInfo.lastModified, outStyle = FilesInfo.exists) { (in: Set[File]) =>
@@ -117,7 +121,7 @@ object ProtobufPlugin extends Plugin {
       cachedCompile(schemas).toSeq
   }
 
-  private[this] def unpackDependenciesTask = (streams, managedClasspath in protobufConfig, externalIncludePath in protobufConfig) map {
+  private[this] def unpackDependenciesTask = (streams, managedClasspath in protobufTask, externalIncludePath in protobufTask) map {
     (out, deps, extractTarget) =>
       val extractedFiles = unpack(deps.map(_.data), extractTarget, out.log)
       UnpackedDependencies(extractTarget, extractedFiles)
