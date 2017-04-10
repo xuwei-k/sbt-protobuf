@@ -23,7 +23,8 @@ class ScopedProtobufPlugin(configuration: Configuration, configurationPostfix: S
 
   lazy val protobufSettings: Seq[Setting[_]] = inConfig(protobufConfig)(Seq[Setting[_]](
     sourceDirectory := { (sourceDirectory in configuration).value / "protobuf" },
-    sourceDirectories := (sourceDirectory.value :: Nil),
+    sourceDirectories := (sourceDirectories in protobufConfig in configuration).?.value.getOrElse(Nil),
+    sourceDirectories += sourceDirectory.value,
     includeFilter := "*.proto",
     javaSource := { (sourceManaged in configuration).value / "compiled_protobuf" },
     externalIncludePath := (target.value / "protobuf_external"),
@@ -31,10 +32,10 @@ class ScopedProtobufPlugin(configuration: Configuration, configurationPostfix: S
     runProtoc := (args => Process(protoc.value, args) ! streams.value.log),
     version := "3.2.0",
 
-    generatedTargets := Nil,
+    generatedTargets := (generatedTargets in protobufConfig in configuration).?.value.getOrElse(Nil),
     generatedTargets += Tuple2((javaSource in protobufConfig).value, "*.java"), // add javaSource to the list of patterns
 
-    protocOptions := Nil,
+    protocOptions := (protocOptions in protobufConfig in configuration).?.value.getOrElse(Nil),
     protocOptions ++= { // if a java target is provided, add java generation option
       (generatedTargets in protobufConfig).value.find(_._2.endsWith(".java")) match {
         case Some(targetForJava) => Seq("--java_out=%s".format(targetForJava._1.getCanonicalPath))
@@ -48,7 +49,8 @@ class ScopedProtobufPlugin(configuration: Configuration, configurationPostfix: S
 
     unpackDependencies := unpackDependenciesTask.value,
 
-    includePaths := ((sourceDirectory in protobufConfig).value :: Nil),
+    includePaths := (includePaths in protobufConfig in configuration).?.value.getOrElse(Nil),
+    includePaths += (sourceDirectory in protobufConfig).value,
     includePaths += externalIncludePath.value,
 
     generate := sourceGeneratorTask.dependsOn(unpackDependencies).value
