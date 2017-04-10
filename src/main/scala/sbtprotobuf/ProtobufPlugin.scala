@@ -20,8 +20,32 @@ class ScopedProtobufPlugin(configuration: Configuration, configurationPostfix: S
   val generate = TaskKey[Seq[File]]("protobuf-generate", "Compile the protobuf sources.")
   val unpackDependencies = TaskKey[UnpackedDependencies]("protobuf-unpack-dependencies", "Unpack dependencies.")
   val protocOptions = SettingKey[Seq[String]]("protobuf-protoc-options", "Additional options to be passed to protoc")
+  val protobufRecompile = TaskKey[Boolean]("protobufRecompile")
+
+  private[this] val arguments = TaskKey[Arguments]("protocArguments", "internal key for detect change options")
+
+  private[this] case class Arguments(
+    protoc: String,
+    generatedTargets: Seq[(File, String)],
+    unpackDependencies: UnpackedDependencies,
+    protocOptions: Seq[String]
+  )
+
+  private[this] object Arguments {
+    import sbt.Cache.seqFormat
+    import sbinary.DefaultProtocol._
+    implicit val instance: sbinary.Format[Arguments] =
+      asProduct4(apply)(Function.unlift(unapply))
+  }
 
   lazy val protobufSettings: Seq[Setting[_]] = inConfig(protobufConfig)(Seq[Setting[_]](
+    arguments := Arguments(
+      protoc = protoc.value,
+      generatedTargets = generatedTargets.value,
+      unpackDependencies = unpackDependencies.value,
+      protocOptions = protocOptions.value
+    ),
+    protobufRecompile := arguments.previous.exists(_ != arguments.value),
     sourceDirectory := { (sourceDirectory in configuration).value / "protobuf" },
     sourceDirectories := (sourceDirectory.value :: Nil),
     includeFilter := "*.proto",
@@ -64,6 +88,13 @@ class ScopedProtobufPlugin(configuration: Configuration, configurationPostfix: S
   )
 
   case class UnpackedDependencies(dir: File, files: Seq[File])
+
+  object UnpackedDependencies extends ((File, Seq[File]) => UnpackedDependencies) {
+    import sbt.Cache.seqFormat
+    import sbinary.DefaultProtocol._
+    implicit val instance: sbinary.Format[UnpackedDependencies] =
+      asProduct2(this)(Function.unlift(unapply))
+  }
 
   private[this] def executeProtoc(protocCommand: Seq[String] => Int, schemas: Set[File], includePaths: Seq[File], protocOptions: Seq[String], log: Logger) : Int =
     try {
@@ -120,15 +151,23 @@ class ScopedProtobufPlugin(configuration: Configuration, configurationPostfix: S
       }
       // Include Scala binary version like "_2.11" for cross building.
       val cacheFile = out.cacheDirectory / s"protobuf_${scalaBinaryVersion.value}"
-      val cachedCompile = FileFunction.cached(cacheFile, inStyle = FilesInfo.lastModified, outStyle = FilesInfo.exists) { (in: Set[File]) =>
+      def compileProto(): Set[File] =
         compile(runProtoc.value,
           schemas,
           (includePaths in protobufConfig).value,
           (protocOptions in protobufConfig).value,
           (generatedTargets in protobufConfig).value,
           out.log)
+
+      val cachedCompile = FileFunction.cached(cacheFile, inStyle = FilesInfo.lastModified, outStyle = FilesInfo.exists) { (in: Set[File]) =>
+        compileProto()
       }
-      cachedCompile(schemas).toSeq
+
+      if (protobufRecompile.value) {
+        compileProto().toSeq
+      } else {
+        cachedCompile(schemas).toSeq
+      }
     }
 
   private[this] def unpackDependenciesTask = Def.task {

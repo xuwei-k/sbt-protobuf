@@ -22,3 +22,7 @@ TaskKey[Unit]("checkJar") := IO.withTemporaryDirectory{ dir =>
 
 // https://github.com/sbt/sbt-protobuf/issues/37
 mainClass in compile := Some("whatever")
+
+TaskKey[Unit]("assertRecompile") := {
+  assert((PB.protobufRecompile in PB.protobufConfig).value)
+}

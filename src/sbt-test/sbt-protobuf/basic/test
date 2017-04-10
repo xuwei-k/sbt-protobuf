@@ -18,3 +18,10 @@ $ exists target/scala-2.10/classes/test/Test2.class
 $ exists target/scala-2.11/src_managed/main/compiled_protobuf/test/Test2.java
 
 > checkJar
+
+-> assertRecompile
+> set scalacOptions +="-deprecation"
+-> assertRecompile
+
+> set sbtprotobuf.ProtobufPlugin.protocOptions in sbtprotobuf.ProtobufPlugin.protobufConfig += "invalid options"
+-> compile
