@@ -1,8 +1,8 @@
 import sbtprotobuf.ProtobufTestPlugin.{Keys => PBT}
 
-scalaVersion := "2.10.7"
+scalaVersion := "2.12.20"
 
-crossScalaVersions += "2.11.12"
+crossScalaVersions += "2.13.15"
 
 enablePlugins(ProtobufPlugin, ProtobufTestPlugin)
 
