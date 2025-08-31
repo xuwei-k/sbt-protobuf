@@ -9,10 +9,9 @@ lazy val root = (project in file("."))
   .enablePlugins(SbtPlugin)
   .settings(nocomma {
     name := "sbt-protobuf"
-    crossScalaVersions := Seq(scala212)
-    scalaVersion := scala212
-    pluginCrossBuild / sbtVersion := "1.5.8"
     libraryDependencies += protobuf
+    scalaVersion := "3.7.2"
+    pluginCrossBuild / sbtVersion := "2.0.0-RC4"
     Compile / sourceGenerators += task {
       val source = s"""package sbtprotobuf
         |

@@ -1,6 +1,6 @@
 package sbtprotobuf
 
-import sbt._
+import sbt.{given, _}
 import Keys._
 import sbt.internal.io.Source
 
@@ -17,5 +17,7 @@ private[sbtprotobuf] trait Compat { self: ScopedProtobufPlugin =>
   }
 
   protected[this] val watchSourcesSetting =
-    watchSources += new Source((ProtobufConfig / sourceDirectory).value, "*.proto", AllPassFilter)
+    watchSources += Def.uncached(
+      new Source((ProtobufConfig / sourceDirectory).value, "*.proto", AllPassFilter)
+    )
 }
