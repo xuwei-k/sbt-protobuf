@@ -34,6 +34,8 @@ jobs:
         distribution: ${{ matrix.distribution }}
         cache: sbt
     - uses: sbt/setup-sbt@v1
+      with:
+        sbt-runner-version: "1.12.2"
     - shell: bash
       run: sbt -v test scripted "++ 3.x" test scriptedTestSbt2
     - shell: bash
